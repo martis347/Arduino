@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <title>Bootstrap Example</title>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css">
+  <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.1.1/jquery.min.js"></script>
+  <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-slider/9.5.3/bootstrap-slider.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-slider/9.5.3/css/bootstrap-slider.css">
+</head>
+<style>
+	.panel{
+		margin: auto;
+		padding: 20px 15px;
+	}
+	#RGB {
+		height: 20px;
+		background: rgb(128, 128, 128);
+		margin:auto;
+		width:230px;
+	}
+	#RC .slider-selection {
+		background: red;
+	}
+	#RC .slider-handle {
+		background: red;
+	}
+	#GC .slider-selection {
+		background: green;
+	}
+	#GC .slider-handle {
+		background: green;
+	}
+	#BC .slider-selection {
+		background: blue;
+	}
+	#BC .slider-handle {
+		border-bottom-color: blue;
+	}
+	#R, #G, #B {
+		width: 300px;
+		margin-left: 1%;
+	}
+	b{
+		margin-right: 1%;
+	}
+
+</style>
+<body>
+
+<div class="container" style="text-align:center">
+  <h1>Lightning controls</h1>          
+
+
+	<div>
+		<span id="item">
+			<label><input id="StaticLightning" type="radio" value="S" name="ColorMode" checked>Static lightning</label>
+			<label><input id="RGBLightning" type="radio" value="R" name="ColorMode">RGB lightning</label>
+		</span>
+	</div>
+	
+	<div id="StaticLightningPanel" class="panel">
+		<span id="item">
+			<text id="text">Brightness</text>
+			<input id="ex1" type="text" data-slider-min="0" data-slider-max="100" data-slider-step="1" data-slider-value="20" data-slider-orientation="vertical"/>
+		</span>
+
+		<span id="item">
+		<text id="text">Warmness</text>
+			<input id="ex2" type="text" data-slider-min="0" data-slider-max="100" data-slider-step="1" data-slider-value="0" data-slider-orientation="vertical"/>
+		</span>
+	</div>
+	
+	<div id="RGBLightningPanel" class="panel" style="display:none;">
+		<div style="text-align:center">
+			<span>
+					<label><input id="Color" type="radio" value="S" name="RGBMode" checked>Static color</label>
+					<label><input id="Music" type="radio" value="M" name="RGBMode">Music</label>
+					<label><input id="Rainbow" type="radio" value="R" name="RGBMode">Rainbow</label>
+			</span>
+		</div>
+		<div id="ColorPanel" class="innerpanel">
+			<p>
+				<b>R</b> <input id="R" type="text" class="span2" value="" data-slider-min="0" data-slider-max="255" data-slider-step="1" data-slider-value="128" data-slider-id="RC" id="R" data-slider-tooltip="hide" data-slider-handle="square" />
+			</p>
+			<p>
+				<b>G</b> <input id="G" type="text" class="span2" value="" data-slider-min="0" data-slider-max="255" data-slider-step="1" data-slider-value="128" data-slider-id="GC" id="G" data-slider-tooltip="hide" data-slider-handle="round" />
+			</p>
+			<p>
+				<b>B</b> <input id="B" type="text" class="span2" value="" data-slider-min="0" data-slider-max="255" data-slider-step="1" data-slider-value="128" data-slider-id="BC" id="B" data-slider-tooltip="hide" data-slider-handle="triangle" />
+			</p>
+			<div id="RGB"></div>
+		</div>
+		
+		<div id="MusicPanel" class="innerpanel" style="display:none;">
+			<text id="text">Shift color</text>
+			<span id="item">
+				<input id="ex3" type="text" data-slider-min="0" data-slider-max="100" data-slider-step="1" data-slider-value="20" data-slider-orientation="vertical"/>
+			</span>
+		</div>	
+		
+		<div id="RainbowPanel" class="innerpanel" style="display:none;">
+			<span id="item">
+				<span>
+					<text id="text">Speed</text>
+				</span>
+				<input id="ex4" type="text" data-slider-min="0" data-slider-max="100" data-slider-step="1" data-slider-value="20" data-slider-orientation="vertical"/>
+			</span>
+			
+			<span id="item">
+				<span>
+					<text id="text">Brightness</text>
+				</span>
+				<input id="ex5" type="text" data-slider-min="0" data-slider-max="100" data-slider-step="1" data-slider-value="50" data-slider-orientation="vertical"/>
+			</span>
+		</div>
+	</div>
+</div>
+
+<script>
+$(function () {
+	var connection = new WebSocket('ws://'+location.hostname+':81/', ['arduino']);
+
+	$("#ex1").slider({
+		reversed : true,
+		tooltip_position:'left'
+	});
+	$("#ex2").slider({
+		reversed : true,
+		tooltip_position:'left'
+	});
+	$("#ex3").slider({
+		reversed : true,
+		tooltip_position:'left'
+	});
+	$("#ex4").slider({
+		reversed : true,
+		tooltip_position:'left'
+	});
+	$("#ex5").slider({
+		reversed : true,
+		tooltip_position:'left'
+	});
+	$("#ex6").slider({
+		reversed : true,
+		tooltip_position:'left'
+	});
+	var RGBChange = function() {
+		$('#RGB').css('background', 'rgb('+r.getValue()+','+g.getValue()+','+b.getValue()+')')
+	};
+
+	var r = $('#R').slider()
+			.on('slide', RGBChange)
+			.data('slider');
+	var g = $('#G').slider()
+			.on('slide', RGBChange)
+			.data('slider');
+	var b = $('#B').slider()
+			.on('slide', RGBChange)
+			.data('slider');
+				
+	
+	$(".slider").change(function(value){
+		var message = "0 " + $('input[name=ColorMode]:checked')[0].value + " " + $("#ex1").val() + " " + $("#ex2").val() + " " + $('input[name=RGBMode]:checked')[0].value + " " + $("#ex3").val() + " " + $("#ex4").val() + " " + $("#ex5").val() + " " + $('#R').val() + " " + $('#G').val() + " " + $('#B').val();
+		
+		connection.send(message);
+	})
+
+	$("#RGBLightning").click(function(){
+		$(".panel").each(function(){$(this).hide()})
+		$("#RGBLightningPanel").show();
+	})
+	$("#StaticLightning").click(function(){
+		$(".panel").each(function(){$(this).hide()})
+		$("#StaticLightningPanel").show();
+	})
+	
+	$("#Color").click(function(){
+		$(".innerpanel").each(function(){$(this).hide()})
+		$("#ColorPanel").show();
+	})
+	$("#Music").click(function(){
+		$(".innerpanel").each(function(){$(this).hide()})
+		$("#MusicPanel").show();
+	})
+	$("#Rainbow").click(function(){
+		$(".innerpanel").each(function(){$(this).hide()})
+		$("#RainbowPanel").show();
+	})
+	<!-- $(".slider").change(function(){ -->
+		<!-- console.log($(this)[0].textContent) -->
+	<!-- }) -->
+	//$("#ex1").val()
+
+})
+</script>
+</body>
+</html>
