@@ -1,335 +1,328 @@
-//NodeMCU/ESP8266 implement WebSocketsServer to control RGB LED
-//arduino-er.blogspot.com
-
 #include <Arduino.h>
-
+#include "IRremoteESP8266.h"//include IRremote library to decode the IR signals 
 #include <ESP8266WiFi.h>
 #include <ESP8266WiFiMulti.h>
 #include <WebSocketsServer.h>
 #include <ESP8266WebServer.h>
 #include <ESP8266mDNS.h>
 #include <Hash.h>
-
 #include "FS.h"
 
-const int ledPinRed1 = 14;    // Red LED connected to analogue out pin
-const int ledPinGrn1 = 12;    // Green LED connected to analogue out pin
-const int ledPinBlu1 = 13;     // Blue LED connected to analogue out pin
+const int sound = 8;
+#define r1 5  //1
+#define g1 4  //2
+#define b1 15  //4
 
-const int ledPinRed2 = 3;    // Red LED connected to analogue out pin
-const int ledPinGrn2 = 5;    // Green LED connected to analogue out pin
-const int ledPinBlu2 = 6;     // Blue LED connected to analogue out pin
+#define r2 14 //5
+#define g2 12 //6
+#define b2 13 //7
 
-int analogPin = 0; // MSGEQ7 OUT
-int strobePin = 3; // MSGEQ7 STROBE
-int resetPin = 2; // MSGEQ7 RESET
-int spectrumValue[7];
-int filterValue = 80;
-
-
-unsigned int r, g, b;
-
-enum MODE {
-  Static,
-  RGB
-};
-enum RGBMode {
-  Music,
-  Rainbow,
-  StaticColor
-};
-
-int stripNumber;
-enum MODE colorMode;
-int staticDimming;
-int staticWarmness;
-enum RGBMode rgbMode;
-int musicColorShift;
-int rainbowSpeed;
-int rainbowBrightness;
-int RGBColors[3];
-
-int rainbowColor = 0;
-
-
-
-
+int number1 = 30; //brightness or RED
+char mode = 'w';
+bool power = false;
+int number2 = 0;
+int number3; //rainbowSpeed or BLUE
+bool broadcast = false;
+String newSignal = "", signal = "";
 
 ESP8266WiFiMulti WiFiMulti;
-
-ESP8266WebServer server = ESP8266WebServer(8081);
+ESP8266WebServer server = ESP8266WebServer(80);
 WebSocketsServer webSocket = WebSocketsServer(81);
 
-String html_home;
-
+String html;
 void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t lenght) {
-
     switch(type) {
         case WStype_DISCONNECTED:
-            Serial.printf("[%u] Disconnected!\n", num);
-            break;
-        case WStype_CONNECTED: {
-            IPAddress ip = webSocket.remoteIP(num);
-            Serial.printf("[%u] Connected from %d.%d.%d.%d url: %s\n", num, ip[0], ip[1], ip[2], ip[3], payload);
-
-            // send message to client
-            webSocket.sendTXT(num, "Connected");
-        }
-            break;
-        case WStype_TEXT: {
-            parseNetworkMessage((char *)payload);
-            switch(colorMode)
-            {
-                case Static:
-                  HSBToRGB(27, staticWarmness, staticDimming, &r, &g, &b);
-                  
-                  break;
-                case RGB:
-                  HandleRGB();
-                  break;  
-            }  
-            break;
+          Serial.printf("[%u] Disconnected!\n", num);
+          break;
+        case WStype_CONNECTED: 
+        {
+          IPAddress ip = webSocket.remoteIP(num);
+          Serial.printf("[%u] Connected from %d.%d.%d.%d url: %s\n", num, ip[0], ip[1], ip[2], ip[3], payload);
+          webSocket.sendTXT(num, signal);
+          break;
+        }     
+        case WStype_TEXT: 
+        {
+          //Serial.print((char *)payload);
+          parseNetworkMessage((char *)payload);
+          break;
         }
     }
-
 }
 
-void prepareFile(){
-  
-  Serial.println("Prepare file system");
+void prepareFiles(){
   SPIFFS.begin();
-  
   File file = SPIFFS.open("/index.html", "r");
-  if (!file) {
+  if (!file) 
+  {
     Serial.println("file open failed");  
-  } else{
-    Serial.println("file open success");
-
-    html_home = "";
+  } 
+  else
+  {
+    html = "";
     while (file.available()) {
       //Serial.write(file.read());
       String line = file.readStringUntil('\n');
-      html_home += line + "\n";
+      Serial.println(line);
+      html += line + "\n";
     }
     file.close();
-
-    Serial.print(html_home);
   }
+
+   Serial.print("Loaded file!");
 }
 
 void setup() {
     Serial.begin(115200);
 
-    Serial.println();
-    Serial.println();
-    Serial.println();
-
-    pinMode(analogPin, INPUT);
-    pinMode(strobePin, OUTPUT);
-    pinMode(resetPin, OUTPUT);
-    
-    pinMode(ledPinRed1, OUTPUT); 
-    pinMode(ledPinGrn1, OUTPUT); 
-    pinMode(ledPinBlu1, OUTPUT);
-    
-    digitalWrite(resetPin, LOW);
-    digitalWrite(strobePin, HIGH);
-
+    pinMode(r1, OUTPUT);pinMode(g1, OUTPUT);pinMode(b1, OUTPUT);
+    pinMode(r2, OUTPUT);pinMode(g2, OUTPUT);pinMode(b2, OUTPUT);
+  
     for(uint8_t t = 4; t > 0; t--) {
         Serial.printf("[SETUP] BOOT WAIT %d...\n", t);
         Serial.flush();
         delay(1000);
     }
-    
-    prepareFile();
 
-    WiFi.softAP("Two Guys One Router", "admin01ADF");
-    IPAddress myIP = WiFi.softAPIP();
-    Serial.print("AP IP address: ");
-    Serial.println(myIP);
+    prepareFiles();
 
-    // start webSocket server
+    WiFi.begin("2 Guys 1 Router", "admin01ADF");
+    while (WiFi.status() != WL_CONNECTED) {
+      delay(500);
+      Serial.print(".");
+    }
+   
+    Serial.println("");
+    Serial.println("WiFi connected");  
+    Serial.println("IP address: ");
+    Serial.println(WiFi.localIP());
+
     webSocket.begin();
     webSocket.onEvent(webSocketEvent);
-
-    if(MDNS.begin("esp8266")) {
-        Serial.println("MDNS responder started");
-    }
-
-    server.on("/", []() {
-        // send home.html
-        server.send(200, "text/html", html_home);
+    
+    server.onNotFound([]() {
+        server.send(200, "text/html", "<!DOCTYPE html><html lang='en'><head><meta http-equiv='X-UA-Compatible' content='IE=edge'><meta charset='utf-8'/><script src='https://cdnjs.cloudflare.com/ajax/libs/bootswatch/3.3.7/fonts/glyphicons-halflings-regular.woff2'></script><meta media='all and (orientation:aa)' name='viewport' content='width=400,height=400,initial-scale=1'><title>Home Control</title><link href='https://martis347.github.io/Home-control/css.css' rel='stylesheet'></head><body><div id='app'></div><script type='text/javascript' src='https://martis347.github.io/Home-control/js.js'></script></body></html>");
     });
-
+    
     server.begin();
-
-    MDNS.addService("http", "tcp", 80);
-    MDNS.addService("ws", "tcp", 81);
-
     Serial.printf("Server Start\n");
 }
 
 void loop() {
-    webSocket.loop();
-    server.handleClient();
+  webSocket.loop();
+  server.handleClient();
 
-    analogWrite(ledPinRed1, r);
-    analogWrite(ledPinGrn1, g);
-    analogWrite(ledPinBlu1, b);
-    if(rgbMode == Rainbow && colorMode == RGB)
+  if(Serial.available()) {
+    delay(100);
+    if((char)Serial.read() == '1')
     {
-      delay(101-rainbowSpeed);
+      power = true;
     }
     else
-      delay(10);
-}
+    {
+      power = false;
+    }
+    Serial.read();
+    mode = (char)Serial.read(); Serial.read();
+    char a = Serial.read();
+    String number;
+    int i = 0;
+    while(isDigit(a)){
+      number += (char)a;
+      a = Serial.read();
+    }
+    number1 = number.toInt();
+    a = Serial.read();
+    i = 0;
+    number = "";
+    while(isDigit(a)){
+      number += (char)a;
+      a = Serial.read();
+    }
+    number2 = number.toInt();
 
-
-
-
-void HandleRGB()
-{
-  switch(rgbMode)
+    a = Serial.read();
+    i = 0;
+    number = "";
+    while(isDigit(a)){
+      number += (char)a;
+      a = Serial.read();
+    }
+    number3 = number.toInt();
+    while(Serial.available())
+      Serial.read();
+  }
+  
+  signal = GenerateValuesString();
+  ProcessLights();
+  
+  if(broadcast)
   {
-      case Music:
-        DoMusic();
-        break;
-        
-      case Rainbow:
-        if(rainbowColor == 255)
-          rainbowColor = 0;
-        HSBToRGB(rainbowColor++, 255, rainbowBrightness, &r, &g, &b);
-        break;
-        
-      case StaticColor:
-        r = RGBColors[0];
-        g = RGBColors[1];
-        b = RGBColors[2];
-        break;
+    Serial.print("Broadcasting "); 
+    Serial.println(signal);  
+    webSocket.broadcastTXT(signal);
+    broadcast = false;
   }
 }
 
-void DoMusic()
+String GenerateValuesString()
 {
-  // Set reset pin low to enable strobe
-  digitalWrite(resetPin, HIGH);
-  digitalWrite(resetPin, LOW);
- 
-  // Get all 7 spectrum values from the MSGEQ7
-  for (int i = 0; i < 5; i++)
+  newSignal = String();;
+  if (power)
   {
-    digitalWrite(strobePin, LOW);
-    delayMicroseconds(30); // Allow output to settle
- 
-    spectrumValue[i] = analogRead(analogPin);
- 
-    // Constrain any value above 1023 or below filterValue
-    spectrumValue[i] = constrain(spectrumValue[i], filterValue, 1023);
-
- 
-    // Remap the value to a number between 0 and 255
-    spectrumValue[i] = map(spectrumValue[i], filterValue, 1023, 0, 255);
-
-    // Remove serial stuff after debugging
-    Serial.print(spectrumValue[i]);
-    Serial.print(" ");
-    digitalWrite(strobePin, HIGH);
+    newSignal = newSignal + "1 ";
   }
-  r = spectrumValue[1];
-  g = spectrumValue[2];
-  b = spectrumValue[3];
+  else
+  {
+    newSignal = newSignal + "0 ";
+  }
+  
+  newSignal = newSignal + mode + " ";
+  newSignal = newSignal + number1 + " ";
+  newSignal = newSignal + number2 + " ";
+  newSignal = newSignal + number3 + " ";
+  newSignal = newSignal + broadcast + " ";
+  
+  return newSignal;
+}
+
+String GenerateValuesString2()
+{
+  newSignal = String();;
+  if (power)
+  {
+    newSignal = newSignal + "1 ";
+  }
+  else
+  {
+    newSignal = newSignal + "0 ";
+  }
+  
+  newSignal = newSignal + mode + " ";
+  newSignal = newSignal + number1 + " ";
+  newSignal = newSignal + number2 + " ";
+  newSignal = newSignal + number3 + " ";
+  newSignal = newSignal + broadcast + " ";
+  
+  return newSignal;
+}
+
+long mils = millis();
+unsigned int r, g, b;
+
+void ProcessLights()
+{
+  if(power)
+  {
+    if(mode == 'w')
+    {
+      analogWrite(r1, number1); analogWrite(r2, number1);
+      analogWrite(g1, number1); analogWrite(g2, number1);
+      analogWrite(b1, number1); analogWrite(b2, number1);
+    }
+    else if (mode == 'r')
+    {
+      analogWrite(r1, number1); analogWrite(r2, number1);
+      analogWrite(g1, 0); analogWrite(g2, 0);
+      analogWrite(b1, 0); analogWrite(b2, 0);
+    }
+    else if (mode == 'g')
+    {
+      analogWrite(r1, 0); analogWrite(r2, 0);
+      analogWrite(g1, number1); analogWrite(g2, number1);
+      analogWrite(b1, 0); analogWrite(b2, 0);
+    }
+    else if (mode == 'b')
+    {
+      analogWrite(r1, 0); analogWrite(r2, 0);
+      analogWrite(g1, 0); analogWrite(g2, 0);
+      analogWrite(b1, number1); analogWrite(b2, number1);
+    }
+    
+    else if (mode == '~')
+    {
+      analogWrite(r1, r); analogWrite(r2, r);
+      analogWrite(g1, g); analogWrite(g2, g);
+      analogWrite(b1, b); analogWrite(b2, b);
+    }
+    else if (mode == 'a')
+    {
+      analogWrite(r1, number1); analogWrite(r2, number1);
+      analogWrite(g1, number2); analogWrite(g2, number2);
+      analogWrite(b1, number3); analogWrite(b2, number3);
+    }
+    else if (mode == 'm')
+    {
+      bool val = digitalRead(sound);
+      unsigned int r, g, b;
+      if(val)
+      {
+        if(number2 == 1024)
+          number2 = 0;
+        HSBToRGB(number2++, 1024, 1024, &r, &g, &b);
+        analogWrite(r1, r); analogWrite(r2, r);
+        analogWrite(g1, g); analogWrite(g2, g);
+        analogWrite(b1, b); analogWrite(b2, b);
+      }
+      else 
+      {
+        analogWrite(r1, 0); analogWrite(r2, 0);
+        analogWrite(g1, 0); analogWrite(g2, 0);
+        analogWrite(b1, 0); analogWrite(b2, 0);
+      }
+    }
+  }
+  else
+  {
+    number1 = 0;
+    analogWrite(r1, 0); analogWrite(r2, 0);
+    analogWrite(g1, 0); analogWrite(g2, 0);
+    analogWrite(b1, 0); analogWrite(b2, 0);
+  }
+
+  if (mode == '~' && millis() - mils >= number3 / 4)
+  {
+    number2++;
+    if(number2 >= 1024)
+      number2 = 0;
+    HSBToRGB(number2, 1024, number1, &r, &g, &b);
+    mils = millis();
+  }
 }
 
 void parseNetworkMessage(char* message)
 {
   char *token;
   int i = 0;
-  
   while((token = strtok_r(message, " ", &message)))
   {
-      if(i == 0)
-      {
-        stripNumber = atoi(token);     
-      }
-      else if(i == 1)
-      {
-        if(strcmp(token, "S") == 0)
-        {
-          colorMode = Static;
-        }
-        else if(strcmp(token, "R") == 0)
-        {
-          colorMode = RGB;
-        }
-        Serial.println("CC");
-      }
-      else if(i == 2)
-      {
-        staticDimming = atoi(token);
-      }
-      else if(i == 3)
-      {
-         staticWarmness = atoi(token);
-      }
-      else if(i == 4)
-      {
-        if(strcmp(token, "M") == 0)
-          rgbMode = Music;
-        else if(strcmp(token, "R") == 0)
-          rgbMode = Rainbow;
-        else if(strcmp(token, "S") == 0)
-          rgbMode = StaticColor;        
-      }
-      else if(i == 5)
-      {
-        musicColorShift = atoi(token);
-      }
-      else if(i == 6)
-      {
-        rainbowSpeed = atoi(token);
-      }
-      else if(i == 7)
-      {
-        rainbowBrightness = atoi(token);
-      }
-      else if(i == 8)
-      {
-        RGBColors[0] = atoi(token);
-      }
-      else if(i == 9)
-      {
-        RGBColors[1] = atoi(token);
-      }
-      else if(i == 10)
-      {
-        RGBColors[2] = atoi(token);
-      }
-      i++;
+  	if(i == 0)
+  	{
+  		power = atoi(token) == 1 ? true : false;  
+  	}
+  	else if(i == 1)
+  	{
+  		mode = token[0];
+  	}
+  	else if(i == 2)
+  	{
+      number1 = atoi(token);
+  	}
+  	else if(i == 3 && mode == 'a')
+  	{
+  		number2 = atoi(token);
+  	}
+  	else if(i == 4)
+  	{
+  		number3 = atoi(token);   
+  	}
+    else if(i == 5)
+    {
+      broadcast = atoi(token) == 1 ? true : false;   
+    }
+  	i++;
   }
-    
-  Serial.println(message);
-  Serial.print(" Strip number: ");Serial.println(stripNumber);
-  Serial.print(" Color mode: ");
-  if(colorMode == RGB)
-    Serial.println("RGB");
-  else if(colorMode == Static)
-    Serial.println("Static");
-
-  Serial.print(" Static dimming: ");Serial.println(staticDimming);
-  Serial.print(" Static warmness: ");Serial.println(staticWarmness);
-  Serial.print(" RGB mode: ");
-  if(rgbMode == Music)
-    Serial.println("Music");
-  else if(rgbMode == Rainbow)
-    Serial.println("Rainbow");
-  else if(rgbMode == StaticColor)
-  Serial.println("StaticColor");
-  Serial.print(" Music color shift ");Serial.println(musicColorShift);
-  Serial.print(" Rainbow speed ");Serial.println(rainbowSpeed);
-  Serial.print(" Rainbow brightness ");Serial.println(rainbowBrightness);
-  Serial.print(" RGBColors[0] ");Serial.println(RGBColors[0]);
-  Serial.print(" RGBColorsL[1] ");Serial.println(RGBColors[1]);
-  Serial.print(" RGBColors[2] ");Serial.println(RGBColors[1]);
 }
 
 void HSBToRGB(
@@ -344,11 +337,11 @@ void HSBToRGB(
     else
     {
         unsigned int scaledHue = (inHue * 6);
-        unsigned int sector = scaledHue >> 8; // sector 0 to 5 around the color wheel
-        unsigned int offsetInSector = scaledHue - (sector << 8);  // position within the sector         
-        unsigned int p = (inBrightness * ( 255 - inSaturation )) >> 8;
-        unsigned int q = (inBrightness * ( 255 - ((inSaturation * offsetInSector) >> 8) )) >> 8;
-        unsigned int t = (inBrightness * ( 255 - ((inSaturation * ( 255 - offsetInSector )) >> 8) )) >> 8;
+        unsigned int sector = scaledHue >> 10; // sector 0 to 5 around the color wheel
+        unsigned int offsetInSector = scaledHue - (sector << 10);  // position within the sector         
+        unsigned int p = (inBrightness * ( 1024 - inSaturation )) >> 10;
+        unsigned int q = (inBrightness * ( 1024 - ((inSaturation * offsetInSector) >> 10) )) >> 10;
+        unsigned int t = (inBrightness * ( 1024 - ((inSaturation * ( 1024 - offsetInSector )) >> 10) )) >> 10;
 
         switch( sector ) {
         case 0:
